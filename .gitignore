@@ -1,0 +1,30 @@
+# --- Secrets (絶対にコミットしない) ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+credentials*
+secrets*
+*token*
+*secret*
+
+# --- Python ---
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/
+
+# --- 出力レポート（後続PRで生成する想定） ---
+/reports/
+*.report.csv
+*.report.json
