@@ -14,8 +14,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from .analyzer import analyze
 from .companies import Company
+from .multi import fetch_and_analyze
 from .sources.base import Source
 
 
@@ -31,7 +31,8 @@ class ScanRow:
     score: int = 0
     ratio: float = 0.0
     keyword_counts: dict[str, int] = field(default_factory=dict)
-    error: str = ""  # 取得失敗時のメッセージ（成功時は空）
+    source_scores: dict[str, int] = field(default_factory=dict)  # ソース別の炎上スコア
+    error: str = ""  # 全ソース失敗時のメッセージ（成功時は空）
 
     def to_json_line(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False)
@@ -66,7 +67,7 @@ def load_checkpoint(path: str | Path) -> dict[str, ScanRow]:
 
 def scan(
     companies: list[Company],
-    source: Source,
+    sources: list[Source],
     *,
     limit: int = 50,
     delay: float = 1.0,
@@ -78,7 +79,7 @@ def scan(
 
     Args:
         companies: 対象企業。
-        source: 情報源（GoogleNewsSource など）。
+        sources: 情報源のリスト（GoogleNewsSource, HatenaBookmarkSource など）。
         limit: 1社あたりの取得記事上限。
         delay: 各社の処理後に待機する秒数（rate limit対策）。
         checkpoint_path: 指定すると1社ごとに結果をJSONL追記する。
@@ -111,7 +112,7 @@ def scan(
                     progress(i, total, row)
                 continue
 
-            row = _scan_one(company, source, limit=limit)
+            row = _scan_one(company, sources, limit=limit)
             results.append(row)
 
             if ckpt_file is not None:
@@ -131,25 +132,26 @@ def scan(
     return results
 
 
-def _scan_one(company: Company, source: Source, *, limit: int) -> ScanRow:
-    """1社をスキャンする。例外は捕捉して error フィールドに記録する。"""
-    try:
-        articles = source.fetch(company.name, limit=limit)
-        result = analyze(articles)
-        return ScanRow(
-            code=company.code,
-            name=company.name,
-            market=company.market,
-            total_articles=result.total_articles,
-            flagged_articles=result.flagged_articles,
-            score=result.score,
-            ratio=round(result.ratio, 4),
-            keyword_counts=result.keyword_counts,
-        )
-    except Exception as e:  # noqa: BLE001 — 1社の失敗で全体を止めないため広く捕捉
-        return ScanRow(
-            code=company.code,
-            name=company.name,
-            market=company.market,
-            error=f"{type(e).__name__}: {e}",
-        )
+def _scan_one(company: Company, sources: list[Source], *, limit: int) -> ScanRow:
+    """1社を全ソースでスキャンする。
+
+    各ソースの失敗は multi 層で個別に握りつぶされ、全ソース失敗時のみ error を立てる。
+    """
+    multi = fetch_and_analyze(company.name, sources, limit=limit)
+    total = multi.total
+    error = ""
+    if multi.all_failed:
+        # 全ソース失敗（1件も取得できず）。代表エラーを記録。
+        error = "; ".join(f"{name}: {msg}" for name, msg in multi.errors.items())
+    return ScanRow(
+        code=company.code,
+        name=company.name,
+        market=company.market,
+        total_articles=total.total_articles,
+        flagged_articles=total.flagged_articles,
+        score=total.score,
+        ratio=round(total.ratio, 4),
+        keyword_counts=total.keyword_counts,
+        source_scores=multi.source_scores,
+        error=error,
+    )

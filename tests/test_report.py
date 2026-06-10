@@ -9,7 +9,7 @@ def _rows():
     return [
         ScanRow(code="0001", name="低", market="M", total_articles=10, flagged_articles=1, score=1, ratio=0.1),
         ScanRow(code="0002", name="高", market="M", total_articles=10, flagged_articles=5, score=5, ratio=0.5,
-                keyword_counts={"炎上": 3, "下落": 2}),
+                keyword_counts={"炎上": 3, "下落": 2}, source_scores={"google_news": 3, "hatena": 2}),
         ScanRow(code="0003", name="失敗", market="M", error="URLError: x"),
     ]
 
@@ -27,7 +27,12 @@ def test_write_csv(tmp_path):
     assert reader[0][0] == "順位"
     # 先頭データ行は最高スコアの企業。
     assert reader[1][1] == "0002"
-    assert "炎上:3" in reader[1][8]
+    # ソース別列・主なワード列の中身を確認。
+    header = reader[0]
+    src_col = header.index("ソース別")
+    kw_col = header.index("主なワード")
+    assert "google_news:3" in reader[1][src_col]
+    assert "炎上:3" in reader[1][kw_col]
 
 
 def test_write_json(tmp_path):

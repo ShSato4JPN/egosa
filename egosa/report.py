@@ -26,6 +26,11 @@ def _top_keywords(row: ScanRow, n: int = 3) -> str:
     return "; ".join(f"{k}:{v}" for k, v in items)
 
 
+def _source_breakdown(row: ScanRow) -> str:
+    """ソース別スコアを "google_news:2; hatena:1" 形式の文字列にする。"""
+    return "; ".join(f"{name}:{score}" for name, score in row.source_scores.items())
+
+
 def write_csv(rows: list[ScanRow], path: str | Path) -> Path:
     """ランキングをCSVに書き出す。"""
     p = Path(path)
@@ -34,7 +39,8 @@ def write_csv(rows: list[ScanRow], path: str | Path) -> Path:
     with p.open("w", encoding="utf-8-sig", newline="") as f:  # Excel向けにBOM付き
         writer = csv.writer(f)
         writer.writerow(
-            ["順位", "コード", "銘柄名", "市場", "炎上スコア", "炎上記事数", "総記事数", "比率", "主なワード", "エラー"]
+            ["順位", "コード", "銘柄名", "市場", "炎上スコア", "炎上記事数", "総記事数",
+             "比率", "ソース別", "主なワード", "エラー"]
         )
         for i, r in enumerate(ranked, start=1):
             writer.writerow(
@@ -47,6 +53,7 @@ def write_csv(rows: list[ScanRow], path: str | Path) -> Path:
                     r.flagged_articles,
                     r.total_articles,
                     f"{r.ratio:.4f}",
+                    _source_breakdown(r),
                     _top_keywords(r),
                     r.error,
                 ]
