@@ -12,12 +12,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import urllib.error
 
 from . import companies as companies_mod
-from .analyzer import FlameResult, analyze
 from .companies import Company
-from .sources.google_news import GoogleNewsSource
+from .multi import MultiResult, fetch_and_analyze
+from .sources import default_sources
 
 
 def _resolve_company(query: str) -> Company | None:
@@ -41,13 +40,25 @@ def _resolve_company(query: str) -> Company | None:
     return hits[0]
 
 
-def _print_human(query: str, company: Company | None, result: FlameResult, show_titles: bool) -> None:
+def _print_human(query: str, company: Company | None, multi: MultiResult, show_titles: bool) -> None:
     """人間向けの整形出力。"""
+    result = multi.total
     label = f"{company.code} {company.name}" if company else query
     print(f"■ 対象: {label}")
     print(f"  取得記事数 : {result.total_articles}")
     print(f"  炎上記事数 : {result.flagged_articles}")
     print(f"  炎上スコア : {result.score}  (比率 {result.ratio:.0%})")
+
+    # ソース別の内訳。
+    if multi.per_source:
+        parts = [
+            f"{name}={r.score}/{r.total_articles}件"
+            for name, r in multi.per_source.items()
+        ]
+        print(f"  ソース別   : {', '.join(parts)}")
+    if multi.errors:
+        for name, msg in multi.errors.items():
+            print(f"  [warn] {name} 取得失敗: {msg}", file=sys.stderr)
 
     if result.keyword_counts:
         print("  ヒットワード（多い順）:")
@@ -60,11 +71,13 @@ def _print_human(query: str, company: Company | None, result: FlameResult, show_
         print("  炎上記事タイトル:")
         for article, hits in result.flagged:
             kw_str = ", ".join(hits.keys())
-            print(f"    - [{kw_str}] {article.title}")
+            src = f"({article.source}) " if article.source else ""
+            print(f"    - {src}[{kw_str}] {article.title}")
 
 
-def _build_payload(query: str, company: Company | None, result: FlameResult, show_titles: bool) -> dict:
+def _build_payload(query: str, company: Company | None, multi: MultiResult, show_titles: bool) -> dict:
     """JSON出力用の辞書を組み立てる。"""
+    result = multi.total
     payload: dict = {
         "query": query,
         "company": (
@@ -77,10 +90,13 @@ def _build_payload(query: str, company: Company | None, result: FlameResult, sho
         "score": result.score,
         "ratio": round(result.ratio, 4),
         "keyword_counts": result.keyword_counts,
+        "source_scores": multi.source_scores,
+        "source_articles": multi.source_articles,
+        "errors": multi.errors,
     }
     if show_titles:
         payload["flagged"] = [
-            {"title": a.title, "link": a.link, "keywords": hits}
+            {"title": a.title, "link": a.link, "source": a.source, "keywords": hits}
             for a, hits in result.flagged
         ]
     return payload
@@ -89,7 +105,7 @@ def _build_payload(query: str, company: Company | None, result: FlameResult, sho
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="egosa",
-        description="上場企業の炎上チェッカー（Google News のネガティブワード件数をカウント）",
+        description="上場企業の炎上チェッカー（複数ソースのネガティブワード件数をカウント）",
     )
     parser.add_argument("query", help="企業名（部分一致）または証券コード")
     parser.add_argument("--limit", type=int, default=50, help="取得する記事の上限（既定: 50）")
@@ -101,20 +117,17 @@ def main(argv: list[str] | None = None) -> int:
     # 検索語: 企業がCSVで特定できたら正式名称、できなければ入力語をそのまま使う。
     search_term = company.name if company else args.query
 
-    source = GoogleNewsSource()
-    try:
-        articles = source.fetch(search_term, limit=args.limit)
-    except (urllib.error.URLError, TimeoutError) as e:
-        print(f"[error] ニュース取得に失敗しました: {e}", file=sys.stderr)
+    multi = fetch_and_analyze(search_term, default_sources(), limit=args.limit)
+    if multi.all_failed:
+        for name, msg in multi.errors.items():
+            print(f"[error] {name} 取得失敗: {msg}", file=sys.stderr)
         return 2
 
-    result = analyze(articles)
-
     if args.json:
-        payload = _build_payload(args.query, company, result, args.show_titles)
+        payload = _build_payload(args.query, company, multi, args.show_titles)
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
-        _print_human(args.query, company, result, args.show_titles)
+        _print_human(args.query, company, multi, args.show_titles)
 
     return 0
 

@@ -39,7 +39,7 @@ def _source():
 
 
 def test_scan_basic_scores():
-    rows = scan(_companies(), _source(), delay=0)
+    rows = scan(_companies(), [_source()], delay=0)
     by_code = {r.code: r for r in rows}
     assert by_code["0001"].score == 2  # 2記事ともネガ
     assert by_code["0002"].score == 0
@@ -47,7 +47,7 @@ def test_scan_basic_scores():
 
 
 def test_scan_continues_after_error():
-    rows = scan(_companies(), _source(), delay=0)
+    rows = scan(_companies(), [_source()], delay=0)
     # 失敗社(3件目)で止まらず全件処理される。
     assert len(rows) == 3
 
@@ -55,7 +55,7 @@ def test_scan_continues_after_error():
 def test_checkpoint_written_and_resumed(tmp_path):
     ckpt = tmp_path / "ckpt.jsonl"
     src1 = _source()
-    scan(_companies(), src1, delay=0, checkpoint_path=ckpt)
+    scan(_companies(), [src1], delay=0, checkpoint_path=ckpt)
     assert ckpt.exists()
 
     loaded = load_checkpoint(ckpt)
@@ -63,14 +63,14 @@ def test_checkpoint_written_and_resumed(tmp_path):
 
     # 再開時は全社完了済みなので fetch は呼ばれない。
     src2 = _source()
-    rows = scan(_companies(), src2, delay=0, checkpoint_path=ckpt, resume=True)
+    rows = scan(_companies(), [src2], delay=0, checkpoint_path=ckpt, resume=True)
     assert src2.calls == []
     assert len(rows) == 3
 
 
 def test_progress_callback_called():
     seen = []
-    scan(_companies(), _source(), delay=0, progress=lambda i, t, r: seen.append((i, t)))
+    scan(_companies(), [_source()], delay=0, progress=lambda i, t, r: seen.append((i, t)))
     assert seen == [(1, 3), (2, 3), (3, 3)]
 
 

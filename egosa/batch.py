@@ -25,9 +25,9 @@ import sys
 from pathlib import Path
 
 from .companies import filter_companies, load_companies
-from .report import format_top, rank, write_csv, write_json
+from .report import format_top, write_csv, write_json
 from .scanner import ScanRow, scan
-from .sources.google_news import GoogleNewsSource
+from .sources import default_sources
 
 DEFAULT_OUT_DIR = Path("reports")
 DEFAULT_CHECKPOINT = DEFAULT_OUT_DIR / "checkpoint.jsonl"
@@ -78,11 +78,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.resume:
         print(f"[info] チェックポイント {checkpoint} から再開します。", file=sys.stderr)
 
-    source = GoogleNewsSource()
+    sources = default_sources()
+    print(f"[info] 情報源: {', '.join(s.name for s in sources)}", file=sys.stderr)
     try:
         rows = scan(
             companies,
-            source,
+            sources,
             limit=args.limit,
             delay=args.delay,
             checkpoint_path=checkpoint,
