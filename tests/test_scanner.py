@@ -74,6 +74,34 @@ def test_progress_callback_called():
     assert seen == [(1, 3), (2, 3), (3, 3)]
 
 
+def test_scan_parallel_processes_all():
+    # workers>1 でも全社処理され、スコアは逐次と一致する。
+    rows = scan(_companies(), [_source()], delay=0, workers=4)
+    by_code = {r.code: r for r in rows}
+    assert set(by_code) == {"0001", "0002", "0003"}
+    assert by_code["0001"].score == 2
+    assert by_code["0002"].score == 0
+    assert by_code["0003"].error
+
+
+def test_scan_parallel_many_companies():
+    # ワーカー数より多い企業でも全件処理される。
+    companies = [
+        Company(code=f"{i:04d}", name="炎上社" if i % 2 else "平穏社",
+                market="プライム（内国株式）")
+        for i in range(20)
+    ]
+    src = FakeSource(
+        mapping={
+            "炎上社": [Article(title="不祥事で炎上")],
+            "平穏社": [Article(title="増収増益")],
+        }
+    )
+    rows = scan(companies, [src], delay=0, workers=8)
+    assert len(rows) == 20
+    assert sum(1 for r in rows if r.score > 0) == 10  # 奇数index=炎上社が10社
+
+
 def test_scanrow_json_roundtrip():
     row = ScanRow(code="0001", name="A", market="M", score=2, keyword_counts={"炎上": 1})
     again = ScanRow.from_json_line(row.to_json_line())

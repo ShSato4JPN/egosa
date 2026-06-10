@@ -54,7 +54,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sector", help="業種でフィルタ（部分一致, 例: 情報・通信）")
     parser.add_argument("--limit-companies", type=int, default=0, help="対象企業数の上限（0=全件）")
     parser.add_argument("--limit", type=int, default=50, help="1社あたりの取得記事上限（既定: 50）")
-    parser.add_argument("--delay", type=float, default=1.0, help="1社ごとの待機秒数（既定: 1.0）")
+    parser.add_argument("--workers", type=int, default=8, help="並列ワーカー数（既定: 8, 1で逐次）")
+    parser.add_argument("--delay", type=float, default=0.2, help="各ワーカーの1社ごと待機秒数（既定: 0.2）")
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR), help="レポート出力先ディレクトリ")
     parser.add_argument("--checkpoint", default=None, help="チェックポイントJSONLのパス")
     parser.add_argument("--resume", action="store_true", help="チェックポイントの続きから再開")
@@ -74,7 +75,11 @@ def main(argv: list[str] | None = None) -> int:
         print("[error] 対象企業が0件です。--market / --sector の条件を見直してください。", file=sys.stderr)
         return 1
 
-    print(f"[info] 対象 {len(companies)} 社をスキャンします（delay={args.delay}s）。", file=sys.stderr)
+    print(
+        f"[info] 対象 {len(companies)} 社をスキャンします"
+        f"（workers={args.workers}, delay={args.delay}s）。",
+        file=sys.stderr,
+    )
     if args.resume:
         print(f"[info] チェックポイント {checkpoint} から再開します。", file=sys.stderr)
 
@@ -86,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
             sources,
             limit=args.limit,
             delay=args.delay,
+            workers=args.workers,
             checkpoint_path=checkpoint,
             resume=args.resume,
             progress=_make_progress(args.quiet),

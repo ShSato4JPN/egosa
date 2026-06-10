@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -70,7 +71,8 @@ def scan(
     sources: list[Source],
     *,
     limit: int = 50,
-    delay: float = 1.0,
+    delay: float = 0.2,
+    workers: int = 8,
     checkpoint_path: str | Path | None = None,
     resume: bool = False,
     progress: Callable[[int, int, ScanRow], None] | None = None,
@@ -81,15 +83,18 @@ def scan(
         companies: 対象企業。
         sources: 情報源のリスト（GoogleNewsSource, HatenaBookmarkSource など）。
         limit: 1社あたりの取得記事上限。
-        delay: 各社の処理後に待機する秒数（rate limit対策）。
+        delay: 各ワーカーが1社処理するごとに待機する秒数（rate limit対策）。
+        workers: 並列ワーカー数（I/O待ちが主なのでスレッド並列）。1以下で逐次実行。
         checkpoint_path: 指定すると1社ごとに結果をJSONL追記する。
         resume: True かつ checkpoint_path が既存なら、完了済みの企業をスキップする。
-        progress: (現在index, 総数, ScanRow) を受け取る進捗コールバック。
+        progress: (完了件数, 総数, ScanRow) を受け取る進捗コールバック。
 
     Returns:
-        全対象企業の ScanRow（resume時は既存分も含む）。
+        全対象企業の ScanRow（resume時は既存分も含む）。並列実行時、順序は
+        完了順になる（レポート側でランキングするため順序は問わない）。
 
-    KeyboardInterrupt が発生してもチェックポイントは保全される（逐次追記のため）。
+    チェックポイントへの書き込みと progress 呼び出しはメインスレッドに集約するため、
+    ロック不要かつ KeyboardInterrupt 時も整合する。
     """
     done: dict[str, ScanRow] = {}
     if resume and checkpoint_path is not None:
@@ -102,34 +107,58 @@ def scan(
         ckpt_file = Path(checkpoint_path).open("a", encoding="utf-8")
 
     total = len(companies)
+    completed = 0
+
+    def _record(row: ScanRow) -> None:
+        """結果の記録（チェックポイント追記＋進捗通知）。メインスレッドからのみ呼ぶ。"""
+        nonlocal completed
+        results.append(row)
+        if ckpt_file is not None:
+            ckpt_file.write(row.to_json_line() + "\n")
+            ckpt_file.flush()
+        completed += 1
+        if progress:
+            progress(completed, total, row)
+
+    # 再開済みの企業を先に処理（ネットワーク不要）。
+    todo: list[Company] = []
+    for company in companies:
+        if company.code in done:
+            _record(done[company.code])
+        else:
+            todo.append(company)
+
     try:
-        for i, company in enumerate(companies, start=1):
-            # 再開時、完了済みはそのまま結果へ。
-            if company.code in done:
-                row = done[company.code]
-                results.append(row)
-                if progress:
-                    progress(i, total, row)
-                continue
-
-            row = _scan_one(company, sources, limit=limit)
-            results.append(row)
-
-            if ckpt_file is not None:
-                ckpt_file.write(row.to_json_line() + "\n")
-                ckpt_file.flush()
-
-            if progress:
-                progress(i, total, row)
-
-            # 最後の1社の後は待たない。
-            if delay > 0 and i < total:
-                time.sleep(delay)
+        if workers <= 1:
+            # 逐次実行。
+            for company in todo:
+                _record(_scan_worker(company, sources, limit, delay))
+        else:
+            # スレッド並列。取得は I/O 待ちが主なので GIL の影響は小さい。
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                futures = [
+                    ex.submit(_scan_worker, c, sources, limit, delay) for c in todo
+                ]
+                try:
+                    for fut in as_completed(futures):
+                        _record(fut.result())
+                except KeyboardInterrupt:
+                    # 実行中タスクを待たずに即座に中断（保存済み分は保全される）。
+                    ex.shutdown(wait=False, cancel_futures=True)
+                    raise
     finally:
         if ckpt_file is not None:
             ckpt_file.close()
 
     return results
+
+
+def _scan_worker(company: Company, sources: list[Source], limit: int, delay: float) -> ScanRow:
+    """1社をスキャンし、rate limit対策として delay 秒待機する（ワーカー実行単位）。"""
+    row = _scan_one(company, sources, limit=limit)
+    if delay > 0:
+        time.sleep(delay)
+    return row
 
 
 def _scan_one(company: Company, sources: list[Source], *, limit: int) -> ScanRow:

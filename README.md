@@ -66,8 +66,12 @@ python -m egosa.cli "トヨタ" --json
 複数企業をまとめてスキャンし、炎上スコア順のランキングと CSV/JSON レポートを出力します。
 
 ```bash
-# 全事業会社をスキャン（既定: 1社1秒待機。全件は約1時間かかります）
+# 全事業会社をスキャン（既定: 8並列。全件でも数分程度）
 python -m egosa.batch
+
+# 並列数・待機時間を調整（速くしたいなら workers を増やす / 丁寧にするなら delay を増やす）
+python -m egosa.batch --workers 16 --delay 0.1
+python -m egosa.batch --workers 1            # 逐次実行（デバッグ用）
 
 # 市場・業種で絞り込み
 python -m egosa.batch --market プライム
@@ -83,7 +87,8 @@ python -m egosa.batch --resume
 - レポートは `reports/flame_ranking.csv`（Excelで開けるBOM付き）と `reports/flame_ranking.json` に出力されます。
 - 処理中は `reports/checkpoint.jsonl` に1社ずつ追記され、Ctrl-C で中断しても `--resume` で続きから再開できます。
 - `reports/` は `.gitignore` 済みでコミットされません。
-- 主なオプション: `--limit`（1社あたり記事数）, `--top`（コンソール表示件数）, `--quiet`（進捗非表示）。
+- 主なオプション: `--workers`（並列数, 既定8）, `--delay`（各ワーカーの1社ごと待機秒, 既定0.2）, `--limit`（1社あたり記事数）, `--top`（コンソール表示件数）, `--quiet`（進捗非表示）。
+- スキャンは I/O 待ちが主のため**スレッド並列**で処理します。相手サーバへの配慮として、並列数を上げすぎず `--delay` を併用してください。
 
 ### 出力例（イメージ）
 
