@@ -62,6 +62,30 @@ def load_companies(csv_path: str | Path = DEFAULT_CSV) -> list[Company]:
     return companies
 
 
+def filter_companies(
+    companies: list[Company],
+    *,
+    market: str | None = None,
+    sector: str | None = None,
+) -> list[Company]:
+    """市場・商品区分／業種区分で部分一致フィルタする。
+
+    Args:
+        companies: 対象企業リスト。
+        market: 「市場・商品区分」への部分一致（例: "プライム"）。None なら絞り込まない。
+        sector: 33業種区分 or 17業種区分への部分一致（例: "情報・通信"）。None なら絞り込まない。
+
+    Returns:
+        条件に合致した Company のリスト。
+    """
+    result = companies
+    if market:
+        result = [c for c in result if market in c.market]
+    if sector:
+        result = [c for c in result if sector in c.sector33 or sector in c.sector17]
+    return result
+
+
 def find(query: str, companies: list[Company] | None = None) -> list[Company]:
     """証券コード（完全一致）または銘柄名（部分一致）で企業を検索する。
 

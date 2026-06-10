@@ -44,6 +44,30 @@ python -m egosa.cli "任天堂" --show-titles --limit 30
 python -m egosa.cli "トヨタ" --json
 ```
 
+### 一括スキャン＆炎上ランキング（PR #2）
+
+複数企業をまとめてスキャンし、炎上スコア順のランキングと CSV/JSON レポートを出力します。
+
+```bash
+# 全事業会社をスキャン（既定: 1社1秒待機。全件は約1時間かかります）
+python -m egosa.batch
+
+# 市場・業種で絞り込み
+python -m egosa.batch --market プライム
+python -m egosa.batch --sector 情報・通信
+
+# 件数を絞ってお試し（先頭5社）
+python -m egosa.batch --limit-companies 5 --delay 0.5
+
+# 中断（Ctrl-C）した続きから再開
+python -m egosa.batch --resume
+```
+
+- レポートは `reports/flame_ranking.csv`（Excelで開けるBOM付き）と `reports/flame_ranking.json` に出力されます。
+- 処理中は `reports/checkpoint.jsonl` に1社ずつ追記され、Ctrl-C で中断しても `--resume` で続きから再開できます。
+- `reports/` は `.gitignore` 済みでコミットされません。
+- 主なオプション: `--limit`（1社あたり記事数）, `--top`（コンソール表示件数）, `--quiet`（進捗非表示）。
+
 ### 出力例（イメージ）
 
 ```
@@ -75,7 +99,7 @@ python -m pytest
 
 ## 開発ロードマップ
 
-- [x] **PR #1**: Google News RSS による炎上ワードカウントCLI（本リリース）
-- [ ] PR #2: CSV一括スキャン / レポート出力 / 炎上ランキング
+- [x] **PR #1**: Google News RSS による炎上ワードカウントCLI
+- [x] **PR #2**: CSV一括スキャン / レポート出力 / 炎上ランキング（本リリース）
 - [ ] PR #3: Reddit / Bluesky 等のソース追加（`.env` でキー管理）
 - [ ] PR #4: 簡易感情分析・ワード重み付け
