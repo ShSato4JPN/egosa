@@ -12,10 +12,10 @@
 
 認証不要の公開ソースを横断します。**スコアはソース別の炎上記事数を合計**し、内訳も保持します。
 
-- **Google News RSS**（日本語ニュース）
-- **はてなブックマーク 検索RSS**（ネット上の話題・炎上記事）
-
-> 後続で Bluesky などの公式API（要認証）にも対応予定です。
+- **Google News RSS**（日本語ニュース・認証不要）
+- **はてなブックマーク 検索RSS**（ネット上の話題・炎上記事・認証不要）
+- **Bluesky 検索API**（SNS上の生の声）— `.env` に認証情報がある場合のみ有効。
+  未設定なら自動でスキップされます。
 
 ## 対象企業
 
@@ -30,6 +30,20 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
+
+## Bluesky を有効にする（任意）
+
+Bluesky を情報源に加える場合のみ設定します（不要なら飛ばしてOK。未設定時は自動でスキップ）。
+
+1. Bluesky で **App Password** を発行（Settings > Privacy and Security > App Passwords）
+2. `.env` を作成して設定:
+   ```bash
+   cp .env.example .env
+   # .env を編集し BLUESKY_HANDLE と BLUESKY_APP_PASSWORD を設定
+   ```
+
+> ⚠️ `.env` は `.gitignore` 済みです。**通常のパスワードではなく必ずアプリパスワード**を使い、
+> 絶対にコミットしないでください。
 
 ## 使い方
 
@@ -111,6 +125,6 @@ python -m pytest
 
 - [x] **PR #1**: Google News RSS による炎上ワードカウントCLI
 - [x] **PR #2**: CSV一括スキャン / レポート出力 / 炎上ランキング
-- [x] **PR #3**: 複数ソース対応（はてなブックマークRSS追加・ソース別加算スコア）（本リリース）
-- [ ] PR #4: Bluesky 等の公式API追加（`.env` でキー管理）
+- [x] **PR #3**: 複数ソース対応（はてなブックマークRSS追加・ソース別加算スコア）
+- [x] **PR #4**: Bluesky 公式API追加（`.env` でキー管理・未設定時は自動スキップ）（本リリース）
 - [ ] PR #4: 簡易感情分析・ワード重み付け
